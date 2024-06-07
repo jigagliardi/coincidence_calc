@@ -1,6 +1,7 @@
 # Monte Carlo code for comparing coincidence of calcite dates and Antarctic isotope maxima
 
 Subglacial precipitates record Antarctic ice sheet response to Southern Ocean warming 
+
 Jessica Gagliardi, Terrence Blackburn, Gavin Piccione, Slawek Tulaczyk, C. Brenhin Keller
 
 Key Points
