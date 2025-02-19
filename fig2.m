@@ -1,181 +1,158 @@
-clear all
-close all
+%% Is probability of calcite formation near climate forcing peaks better than random?
+% This version exists to fix an artifact from previous versions and improve
+% the clarity of the code.
 
-load('fig2.mat');
+ clear all
+ close all
 
-%% define values
+ %% Load data
 
-%time range for plotting
-t1 = 0;
+load('fig_2_v9.mat'); % this version removes everything except EDC, NGRIP & calcite age data
+%load('EDC2023.mat'); % has updated EDC dD from AICC2023 chronology
+
+%% Load variables
+
+% time range for plotting
+t1 = 10;
 t2 = 235;
 
-% EDC unc
-std2 = 1;
+% time range for random data: 
+a = t1; %ka
+b = t2; % ka
 
-%time range for random data: 
-a = 0; %ka
-b = 260; % ka
+% EDC uncertainty
+std2 = 1; %ka?
 
-meas(:,3)=26;
+% y-axis location to plot ages as circles
+meas(:,3) = 26;
 
-%MA filter window size; 
+% moving average filter window size; 
 ka = 10;
-nsims = 10^4;
-ast_unc = 0.1; %ka
-%% find peaks in NH and SH insolation (precession)
 
-NHSI_t = InsolationData5Ma.Timeka(1:401);
-SHSI_t = NHSI_t;
-NHSI_c = InsolationData5Ma.Insolation65NJul(1:401);
-SHSI_c = InsolationData5Ma.Insolation65SJan(1:401);
-NHSI_n = normalize(NHSI_c ,'zscore');
-SHSI_n = normalize(SHSI_c ,'zscore');
-
-[NHSI_pks,NHSI_locs] = findpeaks(NHSI_n,'MinPeakProminence',0.2);
-[SHSI_pks,SHSI_locs] = findpeaks(SHSI_n,'MinPeakProminence',0.2);
-
-%% find peaks in Integrated summer energy (e.g. summer length/obliquity)
-ISE_t = Integ_sum_eng(1:401,1);
-ISE_c = Integ_sum_eng(1:401,2);
-ISE_n =normalize(Integ_sum_eng(1:401,2),'zscore');
-
-[ISE_pks,ISE_locs] = findpeaks(ISE_n,'MinPeakProminence',0.1);
+% number of simulations in the monte carlo model
+nsims = 10^4; 
 
 %% Find peaks in Antarctic temperature 
-EDC_t = EDCd2HAICC2012chron.AgekaBP(600:4917);% 
-EDC_c = EDCd2HAICC2012chron.DSMOW(600:4917);
 
-%% moving average filter
-EDC_t2 = (0:0.1:260);
-EDCt = EDCd2HAICC2012chron.AgekaBP(1:4917);% 
-EDCc = EDCd2HAICC2012chron.DSMOW(1:4917);
-EDC_C = interp1(EDCt,EDCc,EDC_t2,'linear');
+%create time vectors
+EDC_t2 = (t1:.1:t2); % time vector in 100 year increments
+EDC_time_temp = EDCd2HAICC2012chron.AgekaBP; % raw EDC time vector 
 
-wind = ka* 10; % 1increment = 100 years. take years in ka * 10, to get increments
+% find indices for t1 and t2 in EDC data
+[~,EDC_i] = min(abs(EDC_time_temp-t2)); % find index of time closest to t2
+[~,EDC_i2] = min(abs(EDC_time_temp-t1)); % find index of time closest to t1
 
-EDC_SG = smooth(EDC_C,wind) ; % 1integer = 100 years
+% created clipped versions of EDC data from t1 to t2
+EDC_t = EDCd2HAICC2012chron.AgekaBP(EDC_i2:EDC_i); % raw EDC time vector clipped to desired interval 
+EDC_c = EDCd2HAICC2012chron.DSMOW(EDC_i2:EDC_i); % raw EDC d2H vector clipped to desired interval
+EDC_C = interp1(EDC_t,EDC_c,EDC_t2,'linear'); % interpolation of EDC d2H vector to 100 year resolution
+% now EDC_t2 and EDC_C are the vectors we'll use for time and d2H respectively
 
-%subtract out longterm trend to leave millenial scale variation
+% create version of EDC with orbital signal subtracted out to leave signal of millenial scale variation
+wind = ka* 10; % moving average filter. wind = window size. 1 increment = 100 years. take years in ka * 10, to get increments
+EDC_orbsig = smooth(EDC_C,wind) ; % EDC orbital signal
 
+EDC_mill = zeros(length(EDC_C),1); % EDC millennial signal
 for i = 1:length(EDC_C)
-EDC_DSG(i) = EDC_C(i)- EDC_SG(i);
+EDC_mill(i) = EDC_C(i)- EDC_orbsig(i);
 end
+% note to self: EDC_SG is now EDC_orbsig and EDC_DSG is now EDC_mill and SG_locs is now EDCm_locs
 
-%SG_locs = [SG_locs1, SG_loct];
+% 1) calc fractional uncertainty of EDC at each time step. EDC_unc/EDC_c
+% 2) calcualte absolute uncertainty for EDC filtered using fractional unc.
 
-%SG_locs = SG_locs_new;
-%% EDC age unc interpolate
 
-%create unc vector that matches length and time extent as EDC_t
-
-EDC_unc = EDCAICC2012chron.AgeStdDev(1:1645);
-EDC_age = EDCAICC2012chron.AgekaBP(1:1645);
-
-EDC_sig = interp1(EDC_age,EDC_unc,EDC_t);
-EDC_sig = EDC_sig(:)/std2;
-
-EDC_sig2 = interp1(EDC_age,EDC_unc,EDC_t2);
-EDC_sig2 = EDC_sig2(:)/std2;
-
-%%
+% create smoothed versions of EDC and EDC_mill
 EDC_sm = smooth(EDC_C,10);
-EDC_DSG_sm = smooth(EDC_DSG,10);
+EDC_mill_sm = smooth(EDC_mill,10);
 r = 2;
+
+pkprm = 9; % set value for minimum peak prominence
+[~,EDC_locs] = findpeaks(EDC_C,'MinPeakProminence',pkprm); % creates a vector with the locations of peaks in EDC_C
+[~,EDCm_locs] = findpeaks(EDC_mill,'MinPeakProminence',pkprm); % creates a vector with the locations of peaks in EDC_mill
+
+%% interpolate EDC age uncertainty
+% create uncertainty vector that matches length and time extent of EDC_t
+EDC_time_temp2 = EDCAICC2012chron.AgekaBP; % raw EDC time vector from version with age uncertainties
+[~,EDC_i3] = min(abs(EDC_time_temp2-t2)); % find index of time closest to t4
+[~,EDC_i4] = min(abs(EDC_time_temp2-t1)); % find index of time closest to t3
+
+EDC_UNC = EDCAICC2012chron.AgeStdDev(EDC_i4:EDC_i3);
+EDC_age = EDCAICC2012chron.AgekaBP(EDC_i4:EDC_i3);
+
+EDC_sig2 = interp1(EDC_age,EDC_UNC,EDC_t2);
+EDC_sig2 = EDC_sig2(:)/std2;
+EDC_sig2(1) = 0;
+EDC_sig2(end) = 0;
+EDC_sig2(end-1) = 0;
 
 %% count forcing events, collate timing of them.
 
-% number of NHSI highs
-NHSI_cnt = length(NHSI_pks); % count of 
-%NHSI_cnt = length(meas(:,1)); % count of 
-NHSI_dates = NHSI_t(NHSI_locs); %ka
-%for i =1:length(meas(:,1))
-%NHSI_dates(i) = meas(i,1) + (1* rand(1)); %ka
-%end
-NHSI_unc = NHSI_dates; %ka
-NHSI_unc(:) = ast_unc;
-
-% number of SHSI highs
-SHSI_cnt = length(SHSI_pks); % count of 
-SHSI_dates = SHSI_t(SHSI_locs); %ka
-SHSI_unc = SHSI_t(SHSI_locs); %ka
-SHSI_unc(:) = ast_unc;
-
-% number of ISE highs
-ISE_cnt = length(ISE_pks); % count of 
-ISE_dates = ISE_t(ISE_locs); %ka
-ISE_unc = (ISE_t(ISE_locs)); %ka
-ISE_unc(:) = ast_unc;
-
 % number of EDC highs
-EDC_cnt = length(SG_locs); % count of
-EDC_dates = EDC_t2(SG_locs); %ka
-EDC_unc = EDC_sig2(SG_locs); %ka
+EDC_cnt = length(EDC_locs) % count of EDC warm peaks
+EDC_peaks = EDC_t2(EDC_locs); %ka
+EDC_unc = EDC_sig2(EDC_locs); %ka
 
-% number of EDC-LR04 highs
-SG_cnt = length(SG_locs); % count of 
-SG_dates = EDC_t2(SG_locs); %ka
-SG_unc = EDC_sig2(SG_locs); %ka
+% number of EDC_mill highs
+EDCm_cnt = length(EDCm_locs) % count of EDC millennial warm peaks
+EDCm_peaks = EDC_t2(EDCm_locs); %ka
+EDCm_unc = EDC_sig2(EDCm_locs); %ka
 
-cnt_master(1) = NHSI_cnt;
-cnt_master(2) = SHSI_cnt;
-cnt_master(3) = ISE_cnt;
-cnt_master(4) = EDC_cnt;
-cnt_master(5) = SG_cnt;
 
-Co_obs_mst =   zeros(5,1);
-Co_dist_mst = zeros(5,nsims);
-sig_mst= zeros(5,1);
-mn_mst = zeros(5,1);
-%% compare the forcing peaks with the MC synthetic ages
+%% create vectors to store coincidence calculation results 
+
+Co_obs_mst =   zeros(2,1); % coincidence between data and actual warm peaks
+Co_dist_mst = zeros(2,nsims); % coincidence between data and actual warm peaks 
+sig_mst= zeros(2,1); % standard deviation of synthetic coincidences
+mn_mst = zeros(2,1); % mean of synthetic coincidences
+
+%% define calcite ages
+
 dates_mu =  meas(:,1); % calcite ages
 dates_sigma=  meas(:,2)/2;% = age unc 1 sig.
 
 %% Calculate coincidences
 
- % the product of two normal PDFs is a curve with an integrated area equal to another normal PDF,
- % specifically, ∫ pdf(Normal(μ₁, σ₁), x) * pdf(Normal(μ₂, σ₂), x) from x = -inf to inf
- % = normpdf(μ₁, sqrt(σ₁^2 + σ₂^2), μ₂)
- %This lets us calculate coincidence products without numerical integration
-
-% NHSI 
-warm_peaks_mu = NHSI_dates;
-warm_peaks_sigma = NHSI_unc;
+% Calculate coincidence between calcite ages and EDC warm peaks
+warm_peaks_mu = EDC_t2(EDC_locs);
+warm_peaks_sigma =  EDC_sig2(EDC_locs);
   coincidence = 0;
 for i = 1:length(dates_mu)
 for j= 1:length(warm_peaks_mu)
     sigma = sqrt(dates_sigma(i)^2 + warm_peaks_sigma(j)^2);
-    coincidence = coincidence + normpdf(dates_mu(i), warm_peaks_mu(j),sigma);
+    coincidence = coincidence + normpdf(dates_mu(i),  warm_peaks_mu(j),sigma);
 end
 end
-
  coincidence_obs = coincidence / length(dates_mu);
 
-% Calculate coincidence with synthetic data
+% Calculate coincidence between calcite ages and synthetic warm peaks
 coincidence_dist = zeros(nsims,1);
-syn_size = NHSI_cnt;
-syn_peaks_sigma = NHSI_unc;
-
-for k= 1:nsims
-  syn_peaks_mu = a + (b-a) .* rand(syn_size,1);%random times size of NHSI peaks
-
+syn_size = length(EDC_locs);
+for k = 1:nsims
+  syn_peaks_mu = a + (b-a) .* rand(syn_size,1); %random times size of EDC peaks
+    for h = 1:length(syn_peaks_mu)
+        [M,I] =min(abs(syn_peaks_mu(h)- EDC_t2));
+        syn_peaks_sigma = zeros(1,EDC_cnt);
+        syn_peaks_sigma(h) = EDC_sig2(I);
+    end
 coincidence_syn = 0;
     for i = 1:length(dates_mu)
         for j= 1:length(syn_peaks_mu)
          sigma_syn = sqrt(dates_sigma(i)^2 + syn_peaks_sigma(j)^2);
-         coincidence_syn = coincidence_syn + normpdf(dates_mu(i),syn_peaks_mu(j),sigma_syn);
+         coincidence_syn = coincidence_syn + normpdf(dates_mu(i),  syn_peaks_mu(j),sigma_syn);
         end
     end
      coincidence_dist(k,1) = coincidence_syn / length(dates_mu);
 end
 
-Co_obs_mst(1) =   coincidence_obs;
+Co_obs_mst(1) = coincidence_obs;
 Co_dist_mst(1,:) = coincidence_dist(:);
 sig_mst(1) = std(coincidence_dist);
 mn_mst(1) = mean(coincidence_dist);
 
-% SHSI 
-warm_peaks_mu = SHSI_dates;
-warm_peaks_sigma = SHSI_unc;
+% Calculate coincidence between calcite ages and EDC millenial signal (EDC smooth subtracted)
+warm_peaks_mu = EDCm_peaks;
+warm_peaks_sigma = EDCm_unc;
   coincidence = 0;
 for i = 1:length(dates_mu)
 for j= 1:length(warm_peaks_mu)
@@ -188,120 +165,7 @@ end
 
 % Calculate coincidence with synthetic data
 coincidence_dist = zeros(nsims,1);
-syn_size = SHSI_cnt;
-syn_peaks_sigma = SHSI_unc;
-
-for k= 1:nsims
-  syn_peaks_mu = a + (b-a) .* rand(syn_size,1);%random times size of NHSI peaks
-% 
-coincidence_syn = 0;
-    for i = 1:length(dates_mu)
-        for j= 1:length(syn_peaks_mu)
-         sigma_syn = sqrt(dates_sigma(i)^2 + syn_peaks_sigma(j)^2);
-         coincidence_syn = coincidence_syn + normpdf(dates_mu(i),  syn_peaks_mu(j),sigma_syn);
-        end
-    end
-     coincidence_dist(k,1) = coincidence_syn / length(dates_mu);
-end
-
-Co_obs_mst(2) =   coincidence_obs;
-Co_dist_mst(2,:) = coincidence_dist(:);
-sig_mst(2) = std(coincidence_dist);
-mn_mst(2) = mean(coincidence_dist);
-
-% ISE
-warm_peaks_mu = ISE_dates;
-warm_peaks_sigma = ISE_unc;
-  coincidence = 0;
-for i = 1:length(dates_mu)
-for j= 1:length(warm_peaks_mu)
-    sigma = sqrt(dates_sigma(i)^2 + warm_peaks_sigma(j)^2);
-    coincidence = coincidence + normpdf(dates_mu(i), warm_peaks_mu(j), sigma);
-end
-end
-
- coincidence_obs = coincidence / length(dates_mu);
-
-% Calculate coincidence with synthetic data
-coincidence_dist = zeros(nsims,1);
-syn_size = ISE_cnt;
-syn_peaks_sigma = ISE_unc;
-
-for k= 1:nsims
-  syn_peaks_mu = a + (b-a) .* rand(syn_size,1);%random times size of NHSI peaks
-
-
-coincidence_syn = 0;
-    for i = 1:length(dates_mu)
-        for j= 1:length(syn_peaks_mu)
-         sigma_syn = sqrt(dates_sigma(i)^2 + syn_peaks_sigma(j)^2);
-         coincidence_syn = coincidence_syn + normpdf(dates_mu(i),  syn_peaks_mu(j),sigma_syn);
-        end
-    end
-     coincidence_dist(k,1) = coincidence_syn / length(dates_mu);
-end
-
-Co_obs_mst(3) =   coincidence_obs;
-Co_dist_mst(3,:) = coincidence_dist(:);
-sig_mst(3) = std(coincidence_dist);
-mn_mst(3) = mean(coincidence_dist);
-
-% EDC 
-warm_peaks_mu = EDC_t2(SG_locs);
-warm_peaks_sigma =  EDC_sig2(SG_locs);
-  coincidence = 0;
-for i = 1:length(dates_mu)
-for j= 1:length(warm_peaks_mu)
-    sigma = sqrt(dates_sigma(i)^2 + warm_peaks_sigma(j)^2);
-    coincidence = coincidence + normpdf(dates_mu(i),  warm_peaks_mu(j),sigma);
-end
-end
-
- coincidence_obs = coincidence / length(dates_mu);
-
-% Calculate coincidence with synthetic data
-coincidence_dist = zeros(nsims,1);
-syn_size = length(SG_locs);
-
-for k= 1:nsims
-  syn_peaks_mu = a + (b-a) .* rand(syn_size,1);%random times size of NHSI peaks
-
-    for h = 1:length(syn_peaks_mu)
-        [M,I] =min(abs(syn_peaks_mu(h)- EDC_t2));
-        syn_peaks_sigma(h) = EDC_sig2(I);
-    end
-% 
-coincidence_syn = 0;
-    for i = 1:length(dates_mu)
-        for j= 1:length(syn_peaks_mu)
-         sigma_syn = sqrt(dates_sigma(i)^2 + syn_peaks_sigma(j)^2);
-         coincidence_syn = coincidence_syn + normpdf(dates_mu(i),  syn_peaks_mu(j),sigma_syn);
-        end
-    end
-     coincidence_dist(k,1) = coincidence_syn / length(dates_mu);
-end
-
-Co_obs_mst(4) =   coincidence_obs;
-Co_dist_mst(4,:) = coincidence_dist(:);
-sig_mst(4) = std(coincidence_dist);
-mn_mst(4) = mean(coincidence_dist);
-
-% EDC Millenial  
-warm_peaks_mu = SG_dates;
-warm_peaks_sigma = SG_unc;
-  coincidence = 0;
-for i = 1:length(dates_mu)
-for j= 1:length(warm_peaks_mu)
-    sigma = sqrt(dates_sigma(i)^2 + warm_peaks_sigma(j)^2);
-    coincidence = coincidence + normpdf(dates_mu(i),  warm_peaks_mu(j),sigma);
-end
-end
-
- coincidence_obs = coincidence / length(dates_mu);
-
-% Calculate coincidence with synthetic data
-coincidence_dist = zeros(nsims,1);
-syn_size = SG_cnt;
+syn_size = EDCm_cnt;
 aa = max(meas(:,2));
 bb = min(meas(:,2));
 
@@ -311,69 +175,56 @@ for k= 1:nsims
    for h = 1:length(syn_peaks_mu)
         [M,I] =min(abs(syn_peaks_mu(h)- EDC_t2));
         syn_peaks_sigma(h) = EDC_sig2(I);
-   end
+    end
 
 coincidence_syn = 0;
     for i = 1:length(dates_mu)
-        for j= 1:length(syn_peaks_mu)
+        for j= 1:length(syn_peaks_mu) % this may be the problem
          sigma_syn = sqrt(dates_sigma(i)^2 + syn_peaks_sigma(j)^2);
          coincidence_syn = coincidence_syn + normpdf(dates_mu(i),  syn_peaks_mu(j),sigma_syn);
-        end
+        %  if isnan(coincidence_syn)
+        %  pause
+        %  end
+         end
     end
      coincidence_dist(k,1) = coincidence_syn / length(dates_mu);
+
+    
 end
 
-Co_obs_mst(5) =   coincidence_obs;
-Co_dist_mst(5,:) = coincidence_dist(:);
-sig_mst(5) = std(coincidence_dist);
-mn_mst(5) = mean(coincidence_dist);
+Co_obs_mst(2) =   coincidence_obs;
+Co_dist_mst(2,:) = coincidence_dist(:);
+sig_mst(2) = std(coincidence_dist);
+mn_mst(2) = mean(coincidence_dist);
 
 
-%% P value calc
+%% Calculate p-value
+P = zeros(1,length(Co_obs_mst));
 for i = 1:length(Co_obs_mst)
-P(i) =1-normcdf(Co_obs_mst(i),mn_mst(i),sig_mst(i))
+P(i) = 1 - normcdf(Co_obs_mst(i),mn_mst(i),sig_mst(i)) % not sure how this makes p-value
 end
 
 %% plot 
+
 figure (1)
-% subplot(3,1,1)
-% plot(EDC_t2,EDC_C,Color=[0.8 0.8 0.8])
-% hold on
-% plot(EDC_t2,EDC_sm,'k');
-% hold on
-% %plot(EDC_t2(SG_locs),EDC_sm(SG_locs),'ro')
-% ylabel(['EDC \deltaD','(',char(8240),')'])
-% box 'off'
-% xlim([t1 t2])
-% 
-% set(gca,'xticklabel',{[]})
-% set(gca, 'xtick', t1:20:t2);
-% set(gca,'XMinorTick','on')
-% hold off
 
-subplot(2,1,1)
-% orbital signal filtered out
-%plot(EDC_t2,EDC_DSG,Color=[0.8 0.8 0.8]);
-%hold on
-%plot(EDC_t2,EDC_DSG_sm,'k');
-%hold on
-%plot(EDC_t2(SG_locs),EDC_DSG_sm(SG_locs),'ro')
-
-% orbital signal not filtered out
+subplot(2,1,1) 
+% plot EDC (raw and smoothed) with orbital signal not filtered out
 plot(EDC_t2,EDC_C,Color=[0.8 0.8 0.8])
 hold on
 plot(EDC_t2,EDC_sm,'k');
 hold on
-plot(EDC_t2(SG_locs),EDC_sm(SG_locs),'ro')
+plot(EDC_t2(EDC_locs),EDC_sm(EDC_locs),'ro')
 
 % plot calcite ages as open circles above graph
-plot(meas(:,1),-350,'ko')%,'LineWidth',1.5)
+plot(meas(:,1),(max(EDC_C)),'ko')%,'LineWidth',1.5)
 
+% plot calcite ages and errors as blue bars
  for i = 1:length(meas(:,1))
  x1 = meas(i,1)+(meas(i,2)/1);
  x2 = meas(i,1)-(meas(i,2)/1);
- y1 = -450;
- y2 = -360;
+ y1 = min(EDC_C);
+ y2 = max(EDC_C);
  hold on
  pgon = polyshape([x1 x2 x2 x1],[y1 y1 y2 y2]);
  hold on
@@ -381,6 +232,7 @@ plot(meas(:,1),-350,'ko')%,'LineWidth',1.5)
  hold on
  end
 
+ % format axes
 hold on
 ylabel(['EDC \deltaD','(',char(8240),')'])
 set(gca,'XMinorTick','on')
@@ -388,65 +240,46 @@ set(gca, 'xtick', t1:20:t2);
 xlabel('Time (ka)')
 box 'off'
 xlim([t1 t2])
-ylim([y1 -345])
+ylim([y1 y2])
 
-hold all
+% add histogram of coincidences
+hold on
 subplot(2,1,2)
-%title('forcing: millenial EDC')
-histogram(Co_dist_mst(5,:))
-xline(Co_obs_mst(5),'r','LineWidth',3)
-%yline(mean(Co_dist_mst(5,:)),'k')
+histogram(Co_dist_mst(1,:))
+xline(Co_obs_mst(1),'r','LineWidth',3)
 xlabel('Coincidence');
-% ylabel('Frequency');
-%set(gca,'xticklabel',{[]})
-%set(gca,'YAxisLocation','right')
-%set(gca, 'YScale', 'log')
- hold off
+hold off
 
-% figure (3)
-% 
-% subplot(2,1,1)
-% plot(1:5, P,'ko','MarkerSize',8,'markerfacecolor', 'b')
-% yline(0.05,'r')
-% %set(gca, 'YScale', 'log')
-% hold on
-% ylabel('Signifigance P-value');
-% 
-% subplot(2,1,2)
-% plot(1:5, cnt_master,'ko','MarkerSize',8,'markerfacecolor', 'b')
-% hold on
-% xlabel('Experiment number');
-% ylabel('Peak count');
 %% 
 figure (2)
 % plot EDC
-plot(EDC_t2,EDC_C,Color=[0.8 0.8 0.8])
+%plot(EDC_t2,EDC_C,Color=[0.8 0.8 0.8])
 hold on
 plot(EDC_t2,EDC_sm,'k');
 hold on
 
 % plot AIMs as red circles
-plot(EDC_t2(SG_locs),EDC_sm(SG_locs),'ro')
+plot(EDC_t2(EDC_locs),EDC_sm(EDC_locs),'ro')
 
 % plot calcite ages and 2(?) sigma errors as blue boxes
- for i = 1:length(meas(:,1))
- x1 = meas(i,1)+(meas(i,2)/1);
- x2 = meas(i,1)-(meas(i,2)/1);
- y1 = -450;
- y2 = -360;
- hold on
- pgon = polyshape([x1 x2 x2 x1],[y1 y1 y2 y2]);
- hold on
- plot(pgon,'Edgecolor','none','Facecolor',[0.7 0.8 0.9])
- hold on
- end
- 
+ % for i = 1:length(meas(:,1))
+ % x1 = meas(i,1)+(meas(i,2)/1);
+ % x2 = meas(i,1)-(meas(i,2)/1);
+ % y1 = -450;
+ % y2 = -360;
+ % hold on
+ % pgon = polyshape([x1 x2 x2 x1],[y1 y1 y2 y2]);
+ % hold on
+ % plot(pgon,'Edgecolor','none','Facecolor',[0.7 0.8 0.9])
+ % hold on
+ % end
+
 % format axes
 box 'off'
-xlim([t1 t2])
+xlim([0 120])
 ylim([-450 -360])
 ylabel(['EDC \deltaD','(',char(8240),')'])
-xlabel(['Time (ka)'])
+xlabel('Time (ka)')
 hold on
 set(gca, 'xtick', t1:20:t2)
 set(gca,'XMinorTick','on')
