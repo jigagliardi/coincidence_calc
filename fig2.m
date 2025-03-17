@@ -7,7 +7,7 @@
 
  %% Load data
 
-load('fig_2_v9.mat'); % this version removes everything except EDC, NGRIP & calcite age data
+load('fig2.mat'); % this version removes everything except EDC, NGRIP & calcite age data
 %load('EDC2023.mat'); % has updated EDC dD from AICC2023 chronology
 
 %% Load variables
@@ -56,15 +56,13 @@ EDC_mill = zeros(length(EDC_C),1); % EDC millennial signal
 for i = 1:length(EDC_C)
 EDC_mill(i) = EDC_C(i)- EDC_orbsig(i);
 end
-% note to self: EDC_SG is now EDC_orbsig and EDC_DSG is now EDC_mill and SG_locs is now EDCm_locs
 
 % 1) calc fractional uncertainty of EDC at each time step. EDC_unc/EDC_c
 % 2) calcualte absolute uncertainty for EDC filtered using fractional unc.
 
-
 % create smoothed versions of EDC and EDC_mill
-EDC_sm = smooth(EDC_C,10);
-EDC_mill_sm = smooth(EDC_mill,10);
+EDC_sm = smooth(EDC_C,1);
+EDC_mill_sm = smooth(EDC_mill,1);
 r = 2;
 
 pkprm = 9; % set value for minimum peak prominence
@@ -179,7 +177,7 @@ for k= 1:nsims
 
 coincidence_syn = 0;
     for i = 1:length(dates_mu)
-        for j= 1:length(syn_peaks_mu) % this may be the problem
+        for j= 1:length(syn_peaks_mu)
          sigma_syn = sqrt(dates_sigma(i)^2 + syn_peaks_sigma(j)^2);
          coincidence_syn = coincidence_syn + normpdf(dates_mu(i),  syn_peaks_mu(j),sigma_syn);
         %  if isnan(coincidence_syn)
@@ -201,30 +199,32 @@ mn_mst(2) = mean(coincidence_dist);
 %% Calculate p-value
 P = zeros(1,length(Co_obs_mst));
 for i = 1:length(Co_obs_mst)
-P(i) = 1 - normcdf(Co_obs_mst(i),mn_mst(i),sig_mst(i)) % not sure how this makes p-value
+P(i) = 1 - normcdf(Co_obs_mst(i),mn_mst(i),sig_mst(i))
 end
 
-%% plot 
+%% plot figure 2 panels a and c
 
 figure (1)
 
 subplot(2,1,1) 
-% plot EDC (raw and smoothed) with orbital signal not filtered out
-plot(EDC_t2,EDC_C,Color=[0.8 0.8 0.8])
+% plot EDC (raw) with orbital signal filtered out
+plot(EDC_t2,EDC_mill_sm,'k')
+hold on 
+
+% plot found AIMS as red open circles
+plot(EDC_t2(EDC_locs),EDC_mill_sm(EDC_locs),'ro')
 hold on
-plot(EDC_t2,EDC_sm,'k');
-hold on
-plot(EDC_t2(EDC_locs),EDC_sm(EDC_locs),'ro')
 
 % plot calcite ages as open circles above graph
-plot(meas(:,1),(max(EDC_C)),'ko')%,'LineWidth',1.5)
+plot(meas(:,1),(max(EDC_mill_sm)),'ko')%,'LineWidth',1.5)
+hold on
 
 % plot calcite ages and errors as blue bars
  for i = 1:length(meas(:,1))
  x1 = meas(i,1)+(meas(i,2)/1);
  x2 = meas(i,1)-(meas(i,2)/1);
- y1 = min(EDC_C);
- y2 = max(EDC_C);
+ y1 = min(EDC_mill_sm);
+ y2 = max(EDC_mill_sm);
  hold on
  pgon = polyshape([x1 x2 x2 x1],[y1 y1 y2 y2]);
  hold on
@@ -232,9 +232,9 @@ plot(meas(:,1),(max(EDC_C)),'ko')%,'LineWidth',1.5)
  hold on
  end
 
- % format axes
+% format axes
 hold on
-ylabel(['EDC \deltaD','(',char(8240),')'])
+ylabel(['EDC \Delta\deltaD','(',char(8240),')'])
 set(gca,'XMinorTick','on')
 set(gca, 'xtick', t1:20:t2);
 xlabel('Time (ka)')
@@ -250,29 +250,15 @@ xline(Co_obs_mst(1),'r','LineWidth',3)
 xlabel('Coincidence');
 hold off
 
-%% 
+%% plot non-filtered EDC smoothed for comparison
+
 figure (2)
-% plot EDC
-%plot(EDC_t2,EDC_C,Color=[0.8 0.8 0.8])
 hold on
 plot(EDC_t2,EDC_sm,'k');
 hold on
 
 % plot AIMs as red circles
 plot(EDC_t2(EDC_locs),EDC_sm(EDC_locs),'ro')
-
-% plot calcite ages and 2(?) sigma errors as blue boxes
- % for i = 1:length(meas(:,1))
- % x1 = meas(i,1)+(meas(i,2)/1);
- % x2 = meas(i,1)-(meas(i,2)/1);
- % y1 = -450;
- % y2 = -360;
- % hold on
- % pgon = polyshape([x1 x2 x2 x1],[y1 y1 y2 y2]);
- % hold on
- % plot(pgon,'Edgecolor','none','Facecolor',[0.7 0.8 0.9])
- % hold on
- % end
 
 % format axes
 box 'off'
@@ -284,3 +270,27 @@ hold on
 set(gca, 'xtick', t1:20:t2)
 set(gca,'XMinorTick','on')
 hold on
+
+%% plot EDC millennial signal non-smoothed
+
+figure (3);clf;
+plot(EDC_t2,EDC_mill_sm,'k');
+hold on
+
+% plot peaks from millennial scale filtered 
+plot(EDC_t2(EDCm_locs),EDC_mill_sm(EDCm_locs),'ro')
+title('Filtered points on Filtered EDC')
+hold on
+
+% plot calcite ages and errors as blue bars
+for i = 1:length(meas(:,1))
+x1 = meas(i,1)+(meas(i,2)/1);
+x2 = meas(i,1)-(meas(i,2)/1);
+y1 = min(EDC_mill);
+y2 = max(EDC_mill);
+hold on
+pgon = polyshape([x1 x2 x2 x1],[y1 y1 y2 y2]);
+hold on
+plot(pgon,'Edgecolor','none','Facecolor',[0.7 0.8 0.9])
+hold on
+end
